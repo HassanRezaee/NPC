@@ -1,3 +1,17 @@
+
+
+# Program to create an igraph graph object from the discretized road shape files
+
+# Inputs:
+ # roads_shp: road network shapefiles
+ # delta_l: discretization unit length
+
+# Outputs: 
+ # igr: igraph graph object
+ # nodes_coords_fine: coordinates of all the nodes in igr
+
+
+
 make_graph = function(roads_shp, delta_l){
   
   roads = roads_shp

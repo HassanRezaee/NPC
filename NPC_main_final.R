@@ -96,7 +96,7 @@ n = length(y)
 
 # Compute path distances --------------------------------------------------
 
-DW = compute_D(igr, data_nodes, knot_ids, degrees, nodes_coords); D = DW[[1]]; W = DW[[2]]
+DW = compute_D(igr, data_nodes, knot_ids, nodes_coords); D = DW[[1]]; W = DW[[2]]
 
 
 

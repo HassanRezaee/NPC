@@ -1,3 +1,16 @@
+
+# Program to discretize road shape files
+
+# Inputs:
+ # spatial_line: road shape files
+ # split_length: discretization unit length
+
+
+# Outputs: 
+ # roads: discretized road shape files
+
+
+
 SplitLines = function(spatial_line,
                       split_length,
                       return.dataframe = F,
