@@ -87,10 +87,12 @@ SplitLines = function(spatial_line,
   
   profvis::pause(1)
   
+  print("Discretizing the road network shape files, started!")
+  print("...")
   for (i in 1:nrow(linedf)) {
     
     
-    print(paste("Discretizing the road network ", round(100*i/nrow(linedf),1), "% completed...") )
+    #print(paste("Discretizing the road network ", round(100*i/nrow(linedf),1), "% completed...") )
     # For each line of the dataframe, corresponding to a single line of the spatial object
     # skips if length is less then split_length
     v_seg = linedf[i, ]
@@ -138,7 +140,7 @@ SplitLines = function(spatial_line,
     
   }
   
-  print("Discretizing the road network shape files, Done!")
+  print("Discretizing the road network shape files, done!")
   
   
   #### Visualise the results to check ####
