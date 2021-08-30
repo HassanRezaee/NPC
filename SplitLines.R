@@ -16,7 +16,6 @@ SplitLines = function(spatial_line,
                       return.dataframe = F,
                       plot.results = F) {
   
-  require(sp)
   #### Define support functions ####
   # SpatialLines2df extracts start and end point coordinates of each segment of a SpatialLine object
   # spatial_line: an object class SpatialLinesDataFrame of the package sp
@@ -58,7 +57,6 @@ SplitLines = function(spatial_line,
   }
   
   
-  require(sp)
   linedf2SpatialLines = function(linedf) {
     sl = list()
     for (i in 1:nrow(linedf)) {
