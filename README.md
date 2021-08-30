@@ -110,20 +110,21 @@ points(nodes_coords[data_nodes,],col="green",cex=1);
 
 
 ## Compute path distances
-Compute the path distance and weights between sets of data and knot locations
+Here, we compute the path distance and the corressponding weights between sets of data and knot locations on the road network. The weights are used in the kernel function evaluations to ensure that the resulting covariance matrix between data locations is stationary (about the variance) over the entire road network. The custom function compute_D performs the distance calculations. We have used the "get.shortest.paths" function available in the igraph package to find the trajectory between sets of source and end points. We then manually compute the path distance by simply accumalating all the Euclidean distances between successive points along the shortest path.
 ```{r}
 DW = compute_D(igr, data_nodes, knot_ids, nodes_coords); D = DW[[1]]; W = DW[[2]]
 ```
 
 
 ## Compute weighted densities
+A simple custom function, compute_K, is written and used to evaluate the kernel function based on the distances computed in the previous step. We have considered three kernel types including: 1. Gaussian, 2. Exponential, 3. Epanechnikov. As noted in the paper, the kernel type does not exert a large/noticeable influence on the covariance function as well as the modeling results.
 ```{r}
-kernel_width = 1500
+kernel_width = 1500 # The common practice is to choose kernel width equal or larger than the smaller distance between knot locations.
 K = compute_K(3, kernel_width, D, W)
 ```
 
 
-Prepare input data file for the INLA algorithm
+Next, weprepare input data file for the INLA algorithm. As it shows we have three covariates indicated as covar1 through covar3 which are imported at first along with the road network and the observed crash data.
 ```{r}
 inla_data = data.frame("id" = 1:n, "crash" = y, "covar1" = covars[,1], "covar2" = covars[,2], "covar3" = covars[,3])
 ```
@@ -131,8 +132,13 @@ inla_data = data.frame("id" = 1:n, "crash" = y, "covar1" = covars[,1], "covar2" 
 
 
 
+## Run the models
 
-## Run PR (Poisson regression)
+Here we have considered the proposed model (NPC) a non-spatial model (Poisson regression; PR) and a spatial model (proper Conditional Autoregressive; pCAR) models for comparison purposes. All these models are implemented in INLA which offers very fast computation times.
+
+
+
+We start by running the PR model on the simulated data. We have enabled INLA to compute the DIC and WAIC as well. After the model is fit to the data, we extract the fitted values and the 2.5th and 97.5th percentiles for the fitted crash values as well as the random effects (for NPC and pCAR only).
 ```{r}
 {
   formula_pr <- crash ~ 1 + covar1 + covar2 + covar3
@@ -150,7 +156,7 @@ inla_data = data.frame("id" = 1:n, "crash" = y, "covar1" = covars[,1], "covar2" 
 ```
 
 
-## Run pCAR
+Next we run the pCAR mode. Note that the pCAR method models the spatial correlation among crash data through adjacency matrices. These matrices are computed from the road network directly, i.e., a first degree neighborhood structure and loaded into the project along with other input data at first.
 ```{r}
 {
   g = INLA::inla.read.graph(adj_mat)
@@ -180,7 +186,7 @@ inla_data = data.frame("id" = 1:n, "crash" = y, "covar1" = covars[,1], "covar2" 
 
 
 
-## Run NPC
+Last we run the proposed NPC model. This model is specified as the "z" model in INLA.
 ```{r}
 {
   formula_npc <- crash ~ 1 + covar1 + covar2 + covar3 + f(id, model = "z", Z = K,
@@ -213,8 +219,7 @@ inla_data = data.frame("id" = 1:n, "crash" = y, "covar1" = covars[,1], "covar2" 
 
 
 
-## display the scatter plot between true crash data and the fitted values
-
+To provide a preliminary comparison between the three models' fitting performance, here we display the scatter plot between true crash data and the fitted values along with their 95% credible intervals computed within the INLA algorithm.
 ```{r, fig.width = 9, fig.height = 3}
 {
   
