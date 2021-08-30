@@ -13,17 +13,19 @@ knitr::opts_chunk$set(echo = TRUE)
 
 The following is an application of the Network Process Convolution (NPC) to a simulated crash data set over a small portion of the road network in city center of Ottawa. The data simulation process is explained in detail in the paper; hence, readers are referred to the article for more information. Here we focus solely on the implementation of the model only. 
 
+The NPC model offers a straightforward approach for modeling crash count data over a road network. This models incorportates the real road network structure on which crashes are observed through a kernel convolution approach. The kernel functions are evaluated between sets of spatial locations representing the crash and knots/support points. The kernel functions are evaluated based on the path distance (rather than the Euclidean distance) between these locations. We have tried to include as much details in the paper and in the following repository, but feel free to contact us at hassan_rezaee65@yahoo.com should you have any questions or ideas to improve the code. 
+
 
 
 
 ## Implementation in INLA
 
-Lets first load the libraries required to run the model
+Lets first load the libraries required to prepare the road network, compute the distances, and to run the model.
 
 ```{r}
 remove(list=ls())
 while (!is.null(dev.list()))  dev.off()
-lib_list = c("maptools", "SpatialTools", "ggplot2", "mapproj", "matlab", "Matrix", "tictoc", "loo", "readxl", "geoR", "sp", "rgdal","osmar", "fields", "raster", "shp2graph", "SpatialGraph", "rgeos", "rstan", "StanHeaders", "bazar", "gridExtra", "plotly", "jsonlite", "phylin", "grDevices","plot3D")
+lib_list = c("profvis","igraph","sp","shp2graph")
 ```
 ```{r include=FALSE}
 lapply(lib_list, require, character.only = TRUE)
@@ -31,11 +33,11 @@ lapply(lib_list, require, character.only = TRUE)
 
 
 
-Also some custom functions including:
+Before going through the code, we need to load some pre-defined custom functions including:
 
-- SplitLines: used to discretize a given road network
-- compute_K: used to compute kernel function values between set of points based on their distance
+- SplitLines: used to discretize a given road network shape files
 - compute_D: used to compute the path distance and the corresponding weights between sets of points
+- compute_K: used to compute kernel function values between sets of points based on their distance
 - make_graph: used to create a graph (igraph object) from given road network shape files
 
 
@@ -49,7 +51,7 @@ source("make_graph.R")
 
 
 # Load data
-We have prepared a sample simulated data set. Data have simulated over a small road network taken from downtown Ottawa.
+As mentioned, we have prepared a sample simulated data set. Data have simulated over a small road network taken from downtown Ottawa. The data simulation process is described in detail in the article.
 
 ```{r}
 load("intersection_crash_data_sim.RData")
@@ -58,8 +60,8 @@ n = length(y)
 
 
 
-## Create graph and compute distances
-Load the road network and create an igraph graph object off of it. Start by discretizing the graph to scatter the knots
+## Create a graph and compute distances
+Next we need to load the road network shape files and create an igraph graph object based on it.
 
 ```{r}
 graph_data = make_graph(roads_shp, delta_l = 50); # delta_l is the disretization unit length
@@ -69,7 +71,7 @@ degrees = as.matrix(igraph::degree(igr, v = igraph::V(igr), mode = "total", loop
 ```
 
 
-Locate data on the discretized graph
+In a road crash modeling process we are given a set of observed crash locations and their corresponding frequencies. Thes locations must be relocated onto the graph created from the road network shape files. Here we use a simple nearest neighbor approach.
 ```{r}
 knns = FNN::get.knnx(query=coords, data=nodes_coords, k=5, algo="kd_tree")
 data_nodes = as.matrix(knns[["nn.index"]][,1])
@@ -78,10 +80,10 @@ data_nodes = as.matrix(knns[["nn.index"]][,1])
 
 
 
-Define knot locations
+The Gaussian process that captures the spatial correlation among crash data is formed via a kernerl convolution approach. These kernels are evaluated based set of observed crash data locations, and the knots or support points. The common practice is to scatter these points on a regular grid. Since distances are computed between locations only on the road network, the knots must be scattered over the road network too. For that, we start by forming a regular mesh over the continuous space encompassing the road network and then relocate these points to the nearest location on the road network.
 
 ```{r}
-mx = n*3
+mx = n*3 # must be tuned in wat that the resulting m (number of knots) is smaller than n (number of data)
 xg = seq(from=min(nodes_coords[,1]), to=max(nodes_coords[,1]), length.out=round(sqrt(mx)))
 yg = seq(from=min(nodes_coords[,2]), to=max(nodes_coords[,2]), length.out=round(sqrt(mx)))
 xy = mesh(xg,yg);xy=cbind(c(xy$x),c(xy$y))
