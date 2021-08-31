@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Introduction
 
-The following is an application of the Network Process Convolution (NPC) model to a simulated crash data set over a small road network extracted from Ottawa, Canada. The NPC model incorportates the road network structure on which crashes are observed through a kernel convolution approach. The kernel functions are evaluated between sets of spatial locations representing the crash and knots/support points. The kernel functions are evaluated based on the path distance (rather than the Euclidean distance) between these locations. We have tried to include as much details in the paper and in the following repository, but feel free to contact us at hassan_rezaee65@yahoo.com should you have any questions or ideas to improve the code. 
+The following is an application of the Network Process Convolution (NPC) model to a simulated crash data set over a small road network extracted from Ottawa, Canada. The NPC model incorporates the road network structure on which crashes are observed through a kernel convolution approach. The kernel functions are evaluated between sets of spatial locations representing the crash and knots/support points. The kernel functions are evaluated based on the path distance (rather than the Euclidean distance) between these locations. We have tried to include as much details in the paper and in the following repository, but feel free to contact us at hassan_rezaee65@yahoo.com should you have any questions or ideas to improve the code. 
 
 
 We assume the following are available prior to the implementation:
@@ -20,9 +20,11 @@ We assume the following are available prior to the implementation:
 
 2. Covariates: matrix of size nxp where p is the number of covariates available. Here, these covariates are generated from N(0,1). The data simulation process is explained in detail in the paper; hence, interested readers are referred to the article for more information. Here we focus solely on the implementation of the model only.
 
-3. Road network shape files: these shape files can be imported from the OpenStreetMap databases; however, in this study, the road network shape files were provided by the project industrial partner.
+3. Road network shape files: road shape files of class SpatialLines. These shape files can be imported from the OpenStreetMap databases; however, in this study, the road network shape files were provided by the project industrial partner.
 
-4. Set of custom functions written in R (available in this repository) to prepare the road network, compute distances and kernel densities.
+4. Data adjacency matrix: matrix of size nxn specifying the neighborhood structure of the road network at observed data locations. This is not required for the NPC model and is used in the pCAR model solely for comparison purposes.
+
+5. Set of custom functions written in R (available in this repository) to prepare the road network, compute distances and kernel densities.
 
 
 
@@ -64,8 +66,10 @@ source("make_graph.R")
 As mentioned, we have prepared a sample simulated data set. Data have simulated over a small road network taken from downtown Ottawa. The data simulation process is described in detail in the article.
 
 ```{r}
-load("NPC_crash_data_sim.RData")
-n = length(y)
+load("sample_crash_data_simulated.RData")
+n = nrow(crash)
+y = crash[,3]
+coords = crash[,1:2]
 p = ncol(covars)
 ```
 
@@ -112,9 +116,9 @@ m=length(knot_ids)
  
  
 Display data and knots on the road network
-```{r, fig.width = 5, fig.height = 5}
-w=3; par(mfrow=c(1,1), mar = c(w, w, w, w));
-plot(roads_shp, axes=T, main="Data (green), knots (blue)")
+```{r, fig.width = 4, fig.height = 4}
+w=5; par(mfrow=c(1,1), mar = c(w, w, w, w));
+plot(roads_shp, axes=T, main="Data (green), knots (blue)", xlab="Easting (m)", ylab="Northing (m)")
 points(nodes_coords[knot_ids,], pch=19, col="blue", cex=1);
 points(nodes_coords[data_nodes,], pch=19, col="green", cex=1);
 ```
@@ -154,7 +158,7 @@ We start by running the PR model on the simulated data. We have enabled INLA to 
 formula_pr <- crash ~ 1 + covar1 + covar2 + covar3
 inla_fit_pr <- INLA::inla(formula_pr, family = "poisson", data = inla_data, control.compute=list(config=T,dic=T,waic=T),
                       control.inla = list(h = 1),
-                      verbose=T)
+                      verbose=F)
 y_hat_pr = inla_fit_pr$summary.fitted.values$mean
 y_hat_pr_qts = matrix(NA, n, 2)
 y_hat_pr_qts[,1] = inla_fit_pr[["summary.fitted.values"]][["0.025quant"]]
@@ -173,10 +177,10 @@ formula_car <- crash ~ 1 + covar1 + covar2 + covar3 + f(id, model = "besagproper
                                                             prior = "loggamma",
                                                             initial = 0,
                                                             fixed = F,
-                                                            param = c(1.316611, 0.3361755))))
+                                                            param = c(1.31, 0.33))))
 inla_fit_car <- INLA::inla(formula_car, family = "poisson", data = inla_data, control.compute=list(config=T,dic=T,waic=T),
                        control.inla = list(h = 1),
-                       verbose=T, control.fixed = list(prec.intercept = 0.3, prec=1))
+                       verbose=F, control.fixed = list(prec.intercept = 0.3, prec=1))
 z_hat_car = as.matrix(inla_fit_car[["summary.random"]][["id"]][["mean"]])
 y_hat_car = as.matrix(inla_fit_car$summary.fitted.values$mean)
 beta_hat_car = inla_fit_car[["summary.fixed"]][["mean"]]
@@ -203,7 +207,7 @@ formula_npc <- crash ~ 1 + covar1 + covar2 + covar3 + f(id, model = "z", Z = K,
                                                             param = c(1.316611, 0.3361755))));
 inla_fit_npc <- INLA::inla(formula_npc, family = "poisson", data = inla_data, control.compute=list(config=T,dic=T,waic=T),
                        control.inla = list(h=1),
-                       verbose=T, control.fixed = list(prec.intercept = 0.3, prec=1))
+                       verbose=F, control.fixed = list(prec.intercept = 0.3, prec=1))
 y_hat_npc = inla_fit_npc[["summary.fitted.values"]][["0.5quant"]]
 x_hat = inla_fit_npc[["summary.random"]][["id"]][["mean"]][-(1:n)]
 z_hat_npc = K%*%x_hat
@@ -211,11 +215,11 @@ beta_hat_npc = inla_fit_npc[["summary.fixed"]][["mean"]]
 beta_hat_npc_qts1 = inla_fit_npc[["summary.fixed"]][["0.025quant"]]
 beta_hat_npc_qts2 = inla_fit_npc[["summary.fixed"]][["0.975quant"]]
 x_hat_npc_qts = matrix(NA, m, 2)
-x_hat_npc_qts[,1] = inla_fit_npc[["summary.random"]][["id"]][["0.025quant"]][-(1:n)]#[tr_ids]
-x_hat_npc_qts[,2] = inla_fit_npc[["summary.random"]][["id"]][["0.975quant"]][-(1:n)]#[tr_ids]
+x_hat_npc_qts[,1] = inla_fit_npc[["summary.random"]][["id"]][["0.025quant"]][-(1:n)]
+x_hat_npc_qts[,2] = inla_fit_npc[["summary.random"]][["id"]][["0.975quant"]][-(1:n)]
 z_hat_npc_qts = matrix(NA, n, 2)
-z_hat_npc_qts[,1] = inla_fit_npc[["summary.random"]][["id"]][["0.025quant"]][1:n]#[tr_ids]
-z_hat_npc_qts[,2] = inla_fit_npc[["summary.random"]][["id"]][["0.975quant"]][1:n]#[tr_ids]
+z_hat_npc_qts[,1] = inla_fit_npc[["summary.random"]][["id"]][["0.025quant"]][1:n]
+z_hat_npc_qts[,2] = inla_fit_npc[["summary.random"]][["id"]][["0.975quant"]][1:n]
 y_hat_npc_qts = matrix(NA, n, 2)
 y_hat_npc_qts[,1] = inla_fit_npc[["summary.fitted.values"]][["0.025quant"]]
 y_hat_npc_qts[,2] = inla_fit_npc[["summary.fitted.values"]][["0.975quant"]]
