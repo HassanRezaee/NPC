@@ -30,7 +30,7 @@ We assume the following are available prior to the implementation:
 
 
 
-
+## Implementation
 Lets start first by loading the required libraries.
 
 ```{r}
@@ -94,7 +94,7 @@ data_nodes = as.matrix(knns[["nn.index"]][,1])
 
 
 
-
+## Knot locations
 The Gaussian process that captures the spatial correlation among crash data is formed based on a kernel convolution approach. These kernels are evaluated based set of observed crash data locations, and the knots or support points. The common practice is to scatter these points on a regular grid. Since distances are computed between locations only on the road network, the knots must be located on the road network too. For that, we start by forming a regular mesh over the continuous space encompassing the road network and then relocate these points to the nearest location on the road network. In the end, we remove the knots that are outside the convex hull of the crash data locations.
 
 ```{r}
@@ -139,6 +139,7 @@ K = compute_K(3, kernel_width, D, W)
 ```
 
 
+## Prepare INLA input data frame
 Next, we prepare input data file for the INLA algorithm. As it shows we have three covariates indicated as covar1 through covar3 which are imported at first along with the road network and the observed crash data.
 ```{r}
 inla_data = data.frame("id" = 1:n, "crash" = y, "covar1" = covars[,1], "covar2" = covars[,2], "covar3" = covars[,3])
@@ -147,10 +148,8 @@ inla_data = data.frame("id" = 1:n, "crash" = y, "covar1" = covars[,1], "covar2" 
 
 
 
-## Run the models
-
+## Run the selected models
 Here we have considered the proposed model (NPC), a non-spatial model (Poisson regression; PR) and a spatial model (proper Conditional Autoregressive; pCAR) for comparison purposes. All these models are implemented in INLA.
-
 
 
 We start by running the PR model on the simulated data. We have enabled INLA to compute the DIC and WAIC as well. After the model is fit to the data, we extract the fitted values and the 2.5th and 97.5th percentiles for the fitted crash values as well as the random effects (for NPC and pCAR only).
