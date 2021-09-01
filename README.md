@@ -11,18 +11,18 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Introduction
 
-The following is an application of the Network Process Convolution (NPC) model to a simulated crash data set over a small road network extracted from Ottawa, Canada. The NPC model incorporates the road network structure on which crashes are observed through a kernel convolution approach. The kernel functions are evaluated between sets of spatial locations representing the crash and knots/support points. The kernel functions are evaluated based on the path distance (rather than the Euclidean distance) between these locations. We have tried to include as much details in the paper and in the following repository, but feel free to contact us at hassan_rezaee65@yahoo.com should you have any questions or ideas to improve the code. 
+The following is an application of the Network Process Convolution (NPC) model to a simulated crash data set over a small road network. The NPC model incorporates the road network structure on which crashes are observed through a kernel convolution approach. The kernel functions are evaluated between sets of spatial locations representing the crash and knot/support points. The kernel functions are evaluated based on the path distance (rather than the Euclidean distance) between these locations.  
 
 
 We assume the following are available prior to the implementation:
 
 1. Crash data: matrix of size nx3 including the coordinates of n crash data locations and the corresponding crash counts. The coordinates can be in UTM or Lat-Long format as long as they match the coordinate system of the road network. A UTM coordinate system is preferred as it would be easier to select the kernel width in meters.
 
-2. Covariates: matrix of size nxp where p is the number of covariates available. Here, these covariates are generated from N(0,1). The data simulation process is explained in detail in the paper; hence, interested readers are referred to the article for more information. Here we focus solely on the implementation of the model only.
+2. Covariates: matrix of size nxp where p is the number of covariates available. In this simulation study, these covariates are generated from N(0,1). The data simulation process is explained in detail in the paper; hence, interested readers are referred to the article for more information.
 
 3. Road network shape files: road shape files of class SpatialLines. These shape files can be imported from the OpenStreetMap databases; however, in this study, the road network shape files were provided by the project industrial partner.
 
-4. Data adjacency matrix: matrix of size nxn specifying the neighborhood structure of the road network at observed data locations. This is not required for the NPC model and is used in the pCAR model solely for comparison purposes.
+4. Data adjacency matrix: matrix of size nxn specifying the neighborhood structure of the road network at observed data locations. This is not required for the NPC model and is used only in the pCAR model considered for comparison purposes.
 
 5. Set of custom functions written in R (available in this repository) to prepare the road network, compute distances and kernel densities.
 
@@ -31,7 +31,7 @@ We assume the following are available prior to the implementation:
 
 
 ## Implementation
-Lets start first by loading the required libraries.
+We will start by loading the required libraries.
 
 ```{r}
 remove(list=ls())
@@ -44,12 +44,12 @@ lapply(lib_list, require, character.only = TRUE)
 
 
 
-Next, we load some pre-defined custom functions including:
+Next, we load some pre-defined custom functions:
 
-- make_graph: used to create a graph (igraph object) from given road network shape files
+- make_graph: used to create a graph (igraph object) from given road network shape files,
 - lines_midpoints: used to split all the lines of the road network shape files. We assume the crash data represent the links (and no intersection); however, the crash data are given usually by their point-reference locations. The lines midpoints are then used to relocate the crash data onto the nearest line midpoint on the road network.
-- compute_D: used to compute the path distance and the corresponding weights between sets of points corresponding to the data and knot locations
-- compute_K: used to compute kernel function values between sets of points based on their distances computed from compute_D
+- compute_D: used to compute the path distance and the corresponding weights between sets of points corresponding to the data and knot locations,
+- compute_K: used to compute kernel function values between sets of points based on their distances computed from compute_D.
 
 
 
@@ -63,32 +63,32 @@ source("make_graph.R")
 
 
 
-As mentioned, we have prepared a sample simulated data set. Data have simulated over a small road network taken from downtown Ottawa. The data simulation process is described in detail in the article.
+As mentioned, we have prepared a sample simulated data set. Data have been simulated over a small road network taken from the larger road network of Ottawa in Canada. The data simulation process is described in detail in the article.
 
 ```{r}
 load("sample_crash_data_simulated.RData")
-n = nrow(crash)
-y = crash[,3]
-coords = crash[,1:2]
-p = ncol(covars)
+n = nrow(crash) # number of data
+y = crash[,3] # data vector
+coords = crash[,1:2] # coordinates of the crash data
+p = ncol(covars) # number of covariates
 ```
 
 
 
 ## Create a graph from road network shape files
-Next we need to load the road network shape files and create an igraph graph object. This is accomplished using the function make_graph.R
+Next we need to load the road network shape files and create an igraph graph object. This is accomplished using the function make_graph.R which accepts as input the road network shape files and gives out the igraph object "igr".
 
 ```{r}
-graph_data = make_graph(roads_shp);
+graph_data = make_graph(roads_shp) # produce the graph object used to calculate the distances and weights
 igr = graph_data[[1]]
-nodes_coords = graph_data[[2]]
-degrees = as.matrix(igraph::degree(igr, v = igraph::V(igr), mode = "total", loops = F, normalized = FALSE))
+nodes_coords = graph_data[[2]] # extract the coordinates of all the vertices of the graph
+degrees = as.matrix(igraph::degree(igr, v = igraph::V(igr), mode = "total", loops = F, normalized = FALSE)) # extract the degrees of the corresponding vertices
 ```
 
 
 In a road crash modeling process we are given a set of observed crash locations and their corresponding frequencies. These locations must be relocated onto the graph created from the road network shape files. Here we use a simple nearest neighbor approach.
 ```{r}
-knns = FNN::get.knnx(query=coords, data=nodes_coords, k=1, algo="kd_tree")
+knns = FNN::get.knnx(query=coords, data=nodes_coords, k=1, algo="kd_tree") # finds the nearest neighbor to the crash data locations within the vertices of the graph
 data_nodes = as.matrix(knns[["nn.index"]][,1])
 ```
 
@@ -98,19 +98,18 @@ data_nodes = as.matrix(knns[["nn.index"]][,1])
 The Gaussian process that captures the spatial correlation among crash data is formed based on a kernel convolution approach. These kernels are evaluated based set of observed crash data locations, and the knots or support points. The common practice is to scatter these points on a regular grid. Since distances are computed between locations only on the road network, the knots must be located on the road network too. For that, we start by forming a regular mesh over the continuous space encompassing the road network and then relocate these points to the nearest location on the road network. In the end, we remove the knots that are outside the convex hull of the crash data locations.
 
 ```{r}
-mx = n*1.5 # must be tuned in way that the resulting m (number of knots) is smaller than n (number of data)
-xg = seq(from=min(nodes_coords[,1]), to=max(nodes_coords[,1]), length.out=round(sqrt(mx)))
-yg = seq(from=min(nodes_coords[,2]), to=max(nodes_coords[,2]), length.out=round(sqrt(mx)))
-xy = plot3D::mesh(xg,yg);xy=cbind(c(xy$x),c(xy$y))
+mx = n*1.5 # parameter controlling the density of the knots, it must be tuned in way that the resulting m (number of knots) is smaller than n (number of data)
+xg = seq(from=min(nodes_coords[,1]), to=max(nodes_coords[,1]), length.out=round(sqrt(mx))) # create a mesh grid
+yg = seq(from=min(nodes_coords[,2]), to=max(nodes_coords[,2]), length.out=round(sqrt(mx))) # create a mesh grid
+xy = plot3D::mesh(xg,yg);xy=cbind(c(xy$x),c(xy$y)) # create a mesh grid
 m = nrow(xy)
-knns = FNN::get.knnx(query=xy, data=nodes_coords, k=5, algo="kd_tree")
-knot_ids = unique(as.matrix(knns[["nn.index"]][,1]))
-# knots that are within the convex hull of data locations
+knns = FNN::get.knnx(query=xy, data=nodes_coords, k=1, algo="kd_tree") # relocate the knots onto the road network by finding the nearest neighbors among the graph vertices
+knot_ids = unique(as.matrix(knns[["nn.index"]][,1])) # some nodes might receive more than one knot, only one value is kept.
 pl = as.matrix(nodes_coords[data_nodes,])
-point_in_ids = gMOIP::inHull(nodes_coords[knot_ids,], pl)
+point_in_ids = gMOIP::inHull(nodes_coords[knot_ids,], pl) # knots that are within the convex hull of data locations are kept only
 point_in_ids = which(point_in_ids==1);
 knot_ids = knot_ids[point_in_ids]; 
-m=length(knot_ids)
+m = length(knot_ids) # number of knots
 ```
  
  
@@ -134,7 +133,7 @@ DW = compute_D(igr, data_nodes, knot_ids, nodes_coords); D = DW[[1]]; W = DW[[2]
 ## Compute weighted densities
 Function compute_K is used to evaluate the kernel function based on the distances computed in the previous step. We have considered three kernel types: 1. Gaussian, 2. Exponential, 3. Epanechnikov. As noted in the paper, the kernel type does not exert a large influence on the covariance function as well as the modeling results.
 ```{r}
-kernel_width = 1500 # The common practice is to choose kernel width equal or larger than the smaller distance between knot locations.
+kernel_width = 1500 # The common practice is to choose kernel width equal or larger than the smallest distance between knot locations.
 K = compute_K(3, kernel_width, D, W)
 ```
 
@@ -148,7 +147,7 @@ inla_data = data.frame("id" = 1:n, "crash" = y, "covar1" = covars[,1], "covar2" 
 
 
 
-## Run the selected models
+## Fit the selected models to the observed data
 Here we have considered the proposed model (NPC), a non-spatial model (Poisson regression; PR) and a spatial model (proper Conditional Autoregressive; pCAR) for comparison purposes. All these models are implemented in INLA.
 
 
@@ -156,8 +155,7 @@ We start by running the PR model on the simulated data. We have enabled INLA to 
 ```{r}
 formula_pr <- crash ~ 1 + covar1 + covar2 + covar3
 inla_fit_pr <- INLA::inla(formula_pr, family = "poisson", data = inla_data, control.compute=list(config=T,dic=T,waic=T),
-                      control.inla = list(h = 1),
-                      verbose=F)
+                      control.inla = list(h = 1), verbose=F)
 y_hat_pr = inla_fit_pr$summary.fitted.values$mean
 y_hat_pr_qts = matrix(NA, n, 2)
 y_hat_pr_qts[,1] = inla_fit_pr[["summary.fitted.values"]][["0.025quant"]]
@@ -248,6 +246,128 @@ for (i in 1:n){
 }
 points(y, y_hat_npc, pch=19, cex=1, col="black")
 ```
+
+
+
+
+
+
+## Predict crash at unobserved locations
+The NPC model offers a straightforward to perform predictions at unobserved locations where covariates are readily available. The only pre-requisite is to compute the weighted kernel density matrix between the set of unobserved locations and the crash data locations resulting in the Gaussian process (Z) values at target locations.
+
+$$
+Z_{unobs} = \boldsymbol{K}_{unobs,knots}\psi_{obs},
+$$
+where $\boldsymbol{K}_{unobs,knots}$ is the weighted kernel density matrix evaluated between unobserved and knot locations. Note the locations of the knots is kept the same from the fitting step. Here $\psi_{obs}$ are the fitted values of the latent process at the locations of knots.
+
+To show an example of a prediction problem, we will simply divide the given data set into two subsets: 1. training data used to fit the model (observed or in-sample) and test (target or out-of-sample). This is done randomly.
+
+```{r}
+tr_ids = sample(n,round(n*0.6)) # 60% of the data selected randomly as training subset
+te_ids = setdiff(1:n,tr_ids) # and the rest 40% as test (prediction) subset
+```
+
+Display train, test and knots locations on the road network
+```{r, fig.width =5, fig.height = 5}
+w=5; par(mfrow=c(1,1), mar = c(w, w, w, w));
+plot(roads_shp, axes=T, main="Data-train (red), data-test (green), knots (blue)", xlab="Easting (m)", ylab="Northing (m)")
+points(nodes_coords[knot_ids,], pch=19, col="blue", cex=1);
+points(nodes_coords[data_nodes[tr_ids],], pch=19, col="red", cex=1);
+points(nodes_coords[data_nodes[te_ids],], pch=19, col="green", cex=1);
+```
+
+Next we need to introduce the data to INLA. In INLA the prediction points are introduced at first along with the observed data.
+
+```{r}
+y_pred = y
+y_pred[te_ids] = NA # this will specify the prediction sites, i.e., where covariates are available and crash data receive a NA value.
+inla_data_pred = data.frame("id" = 1:n, "crash" = y_pred, "covar1" = covars[,1], "covar2" = covars[,2], "covar3" = covars[,3])
+link <- rep(1, nrow(inla_data))
+link[which(is.na(inla_data$crash))] <- 1
+```
+
+Next, we will fit the models. Note the argument "control.predictor = list(compute = TRUE, link = link)" enables INLA to perform predictions at prediction sites, and it specifies that the same link function must be used for the prediction sites as that used for observed locations.
+
+```{r}
+inla_fit_pr <- INLA::inla(formula_pr, family = "poisson", data = inla_data, control.compute=list(config=TRUE,dic=T,waic=T),
+                          control.inla = list(h = 1), control.predictor = list(compute = TRUE, link = link),
+                          verbose=FALSE)
+y_hat_pr = inla_fit_pr$summary.fitted.values$mean[te_ids] # extract the predicted values at unobserved locations
+y_hat_pr_qts = matrix(NA, n-length(tr_ids), 2)
+y_hat_pr_qts[,1] = inla_fit_pr[["summary.fitted.values"]][["0.025quant"]][te_ids]
+y_hat_pr_qts[,2] = inla_fit_pr[["summary.fitted.values"]][["0.975quant"]][te_ids]
+```
+
+
+
+
+
+```{r}
+g = INLA::inla.read.graph(adj_mat)
+formula_car <- crash ~ 1 + covar1 + covar2 + covar3 + f(id, model = "besagproper", graph = g, constr= FALSE,
+                                                          hyper = list(prec = list(
+                                                            prior = "loggamma",
+                                                            initial = 0,
+                                                            fixed = F,
+                                                            param = c(1.31, 0.33))))
+inla_fit_car <- INLA::inla(formula_car, family = "poisson", data = inla_data, control.compute=list(config=T,dic=T,waic=T),
+                       control.inla = list(h = 1), control.predictor = list(compute = TRUE, link = link),
+                       verbose=F, control.fixed = list(prec.intercept = 0.3, prec=1))
+y_hat_car = inla_fit_car$summary.fitted.values$mean[te_ids] # extract the predicted values at unobserved locations
+y_hat_car_qts = matrix(NA, n-length(tr_ids), 2)
+y_hat_car_qts[,1] = inla_fit_car[["summary.fitted.values"]][["0.025quant"]][te_ids]
+y_hat_car_qts[,2] = inla_fit_car[["summary.fitted.values"]][["0.975quant"]][te_ids]
+```
+
+
+
+
+```{r}
+formula_npc <- crash ~ 1 + covar1 + covar2 + covar3 + f(id, model = "z", Z = K,
+                                                          hyper = list(prec = list(
+                                                            prior = "loggamma",
+                                                            initial = 0,
+                                                            fixed = F,
+                                                            param = c(1.316611, 0.3361755))));
+inla_fit_npc <- INLA::inla(formula_npc, family = "poisson", data = inla_data, control.compute=list(config=T,dic=T,waic=T),
+                       control.inla = list(h=1), control.predictor = list(compute = TRUE, link = link),
+                       verbose=F, control.fixed = list(prec.intercept = 0.3, prec=1))
+y_hat_npc = inla_fit_npc$summary.fitted.values$mean[te_ids] # extract the predicted values at unobserved locations
+y_hat_npc_qts = matrix(NA, n-length(tr_ids), 2)
+y_hat_npc_qts[,1] = inla_fit_npc[["summary.fitted.values"]][["0.025quant"]][te_ids]
+y_hat_npc_qts[,2] = inla_fit_npc[["summary.fitted.values"]][["0.975quant"]][te_ids]
+```
+
+
+
+
+Display the scatter plots between true crash values and the predicted values at unobserved locations.
+```{r, fig.width = 9, fig.height = 3}
+y_te = y[te_ids]; n1 = length(y_te)
+w=5; par(mfrow=c(1,3), mar = c(w, w, w, w));
+m1 = c(0, max(y_hat_pr_qts[,2], y_hat_car_qts[,2], y_hat_npc_qts[,2]))
+plot(y_te, y_hat_pr, xlim = m1, ylim=m1, ylab=expression(hat(y)),xlab=expression(y), main="PR");abline(0,1)
+for (i in 1:n1){
+   segments(x0=y_te[i], y0=y_hat_pr_qts[i,1], x1 = y_te[i], y1 = y_hat_pr_qts[i,2], col = "gray", lwd = 1)
+}
+points(y_te, y_hat_pr, pch=19, cex=1, col="black")
+plot(y_te, y_hat_car, xlim = m1, ylim=m1, ylab=expression(hat(y)),xlab=expression(y), main="pCAR");abline(0,1)
+for (i in 1:n1){
+  segments(x0=y_te[i], y0=y_hat_car_qts[i,1], x1 = y_te[i], y1 = y_hat_car_qts[i,2], col = "gray", lwd = 1)
+}
+points(y_te, y_hat_car, pch=19, cex=1, col="black")
+plot(y_te, y_hat_npc, xlim = m1, ylim=m1, ylab=expression(hat(y)),xlab=expression(y), main="NPC");abline(0,1)
+for (i in 1:n1){
+  segments(x0=y_te[i], y0=y_hat_npc_qts[i,1], x1 = y_te[i], y1 = y_hat_npc_qts[i,2], col = "gray", lwd = 1)
+}
+points(y_te, y_hat_npc, pch=19, cex=1, col="black")
+```
+
+
+
+
+
+Feel free to contact us at hassan_rezaee65@yahoo.com should you have any questions or ideas to improve the above implementation
 
 
 
